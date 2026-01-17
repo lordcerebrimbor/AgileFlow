@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgileFlow - Enterprise Burndown & Audit Suite</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .modal-overlay { background: rgba(0,0,0,0.6); display: none; z-index: 100; align-items: center; justify-content: center; position: fixed; inset: 0; padding: 1rem; }
+    .modal-overlay.active { display: flex; }
+    .drag-over { background-color: #eff6ff !important; border: 2px dashed #3b82f6 !important; }
+    .task-completed { text-decoration: line-through; opacity: 0.5; }
+    
+    @media print {
+      @page { margin: 0.5cm; size: landscape; }
+      .no-print { display: none !important; }
+      .board-column { flex: 0 0 19% !important; break-inside: avoid; border: 1px solid #e2e8f0 !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden font-sans">
+
+  <header class="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between no-print flex-shrink-0">
+    <div class="flex items-center gap-4">
+      <div class="h-9 w-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-sm">AF</div>
+      <div>
+        <h1 class="text-lg font-bold text-slate-900 leading-tight">AgileFlow</h1>
+        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-indigo-600">Quant & Strategy Edition</p>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="exportPDF()" class="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold hover:bg-indigo-100 uppercase tracking-widest">Export PDF</button>
+      <button onclick="window.print()" class="px-4 py-2 bg-slate-800 text-white rounded-md text-xs font-bold uppercase tracking-widest">Print</button>
+    </div>
+  </header>
+
+  <div class="bg-indigo-600 text-white px-6 py-2 flex items-center gap-3 no-print flex-shrink-0">
+    <i class="fas fa-bullseye text-indigo-200 text-xs"></i>
+    <span class="text-[9px] font-black uppercase tracking-widest text-indigo-200">Sprint Goal:</span>
+    <input type="text" id="sprintGoalInput" oninput="updateGoal(this.value)" placeholder="Main objective..." class="bg-transparent border-none outline-none text-sm font-bold w-full placeholder:text-indigo-400">
+  </div>
+
+  <div class="flex flex-1 overflow-hidden">
+    <main class="flex-1 p-4 overflow-x-auto board-container">
+      <div id="boardContent" class="flex gap-4 h-full min-w-max board-content"></div>
+    </main>
+
+    <aside class="no-print w-72 bg-white border-l border-slate-200 p-4 flex flex-col flex-shrink-0 overflow-y-auto">
+      <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Performance Metrics</h4>
+      
+      <div class="mb-6 p-2 bg-slate-50 rounded-xl border border-slate-100">
+        <canvas id="burndownChart" height="200"></canvas>
+      </div>
+
+      <button onclick="generateReport()" class="mb-3 w-full py-3 bg-emerald-600 text-white rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-2 shadow-sm hover:bg-emerald-700">
+        <i class="fas fa-file-invoice"></i> Generate Lab Report
+      </button>
+
+      <button onclick="exportData()" class="mb-4 w-full py-2 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg font-bold text-[9px] uppercase">
+        <i class="fas fa-file-export mr-1"></i> Quick Backup
+      </button>
+
+      <div class="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-center min-h-[100px] text-center border-dashed">
+        <p class="text-[9px] text-slate-300 font-bold uppercase tracking-tighter">Ad Slot Pending Approval</p>
+      </div>
+
+      <div class="mt-auto">
+        <a href="#" class="block w-full py-3 bg-amber-400 text-amber-950 text-center rounded-lg font-black text-[10px] uppercase shadow-sm">
+          Buy Me A Coffee
+        </a>
+      </div>
+    </aside>
+  </div>
+
+  <div id="taskModal" class="modal-overlay">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-8">
+      <div class="flex justify-between items-center mb-6">
+        <h2 id="modalHeader" class="text-xl font-bold">Manage Task</h2>
+        <button onclick="aiEnhance()" class="text-[10px] bg-indigo-600 text-white px-3 py-1.5 rounded-full font-black uppercase">AI ENHANCE</button>
+      </div>
+      <div class="space-y-5">
+        <input type="text" id="taskTitle" class="w-full text-lg font-bold border-b-2 border-slate-100 outline-none pb-2 focus:border-indigo-600 transition-colors">
+        <textarea id="taskDesc" rows="4" class="w-full p-3 bg-slate-50 border rounded-lg text-sm outline-none" placeholder="Description..."></textarea>
+        <div class="flex gap-4">
+          <select id="taskType" class="flex-1 p-2 border rounded-lg text-sm bg-white">
+            <option>Story</option><option>Task</option><option>Bug</option><option>Epic</option>
+          </select>
+          <input type="number" id="taskPoints" class="w-24 p-2 border rounded-lg text-sm" value="1">
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-8">
+        <button onclick="saveTask()" class="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-bold text-xs uppercase shadow-lg shadow-indigo-100">Save</button>
+        <button id="resetTimerBtn" onclick="resetTaskTimer()" class="flex-1 py-3 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg font-bold text-xs uppercase hidden">Reset Clock</button>
+        <button id="deleteBtn" onclick="deleteTask()" class="flex-1 py-3 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg font-bold text-xs uppercase hidden">Delete</button>
+        <button onclick="toggleModal('taskModal')" class="flex-1 py-3 bg-slate-50 text-slate-400 rounded-lg font-bold text-xs uppercase">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="reportModal" class="modal-overlay">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-8 flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold">Lab Submission Report</h2>
+        <button onclick="copyReport()" class="text-[10px] bg-indigo-600 text-white px-4 py-2 rounded-lg font-black uppercase">Copy Text</button>
+      </div>
+      <div id="reportContent" class="bg-slate-50 p-6 rounded-lg font-mono text-[11px] text-slate-700 overflow-y-auto border border-slate-200 whitespace-pre-wrap flex-1"></div>
+      <button onclick="toggleModal('reportModal')" class="mt-6 w-full py-2 text-xs font-bold text-slate-400 uppercase tracking-widest">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // State including Time, Goal, and Burndown data
+    let state = JSON.parse(localStorage.getItem('agileflow-final-v5')) || {
+      sprintGoal: "",
+      columns: [
+        { id: 'col-backlog', title: 'Backlog', color: 'border-slate-300', tasks: [] },
+        { id: 'col-todo', title: 'To Do', color: 'border-indigo-500', tasks: [] },
+        { id: 'col-inprogress', title: 'In Progress', color: 'border-amber-500', tasks: [] },
+        { id: 'col-review', title: 'Review', color: 'border-purple-500', tasks: [] },
+        { id: 'col-done', title: 'Done', color: 'border-emerald-500', tasks: [] }
+      ]
+    };
+
+    let chartInstance = null;
+    let currentTask = null;
+    let currentTargetCol = '';
+
+    function renderBoard() {
+      const container = document.getElementById('boardContent');
+      container.innerHTML = '';
+      document.getElementById('sprintGoalInput').value = state.sprintGoal;
+
+      state.columns.forEach(col => {
+        const total = col.tasks.length;
+        const finished = col.tasks.filter(t => t.completed).length;
+        const progress = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+        const tasksHtml = col.tasks.map(t => {
+          const hours = (t.timeLogged / 3600).toFixed(2);
+          const isTracking = t.timerStart !== null;
+          return `
+          <div class="bg-white p-3.5 rounded-lg shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all" onclick="openEditTask('${t.id}', '${col.id}')">
+            <div class="flex justify-between items-start mb-2">
+              <input type="checkbox" ${t.completed ? 'checked' : ''} onclick="event.stopPropagation(); toggleComplete('${t.id}', '${col.id}')" class="w-4 h-4 text-indigo-600 rounded">
+              <span class="text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">${t.type}</span>
+            </div>
+            <h4 class="text-[13px] font-bold text-slate-700 leading-tight ${t.completed ? 'task-completed' : ''}">${t.title}</h4>
+            ${t.completed && t.completedAt ? `<div class="text-[9px] text-emerald-600 font-bold mt-1 uppercase tracking-tighter"><i class="fas fa-check-circle"></i> Done: ${t.completedAt}</div>` : ''}
+            <div class="flex items-center justify-between border-t border-slate-50 pt-2 mt-2 no-print" onclick="event.stopPropagation()">
+               <div class="flex items-center gap-1.5">
+                  <button onclick="toggleTimer('${t.id}', '${col.id}')" class="w-6 h-6 rounded-full flex items-center justify-center ${isTracking ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}">
+                     <i class="fas ${isTracking ? 'fa-stop' : 'fa-play'} text-[10px]"></i>
+                  </button>
+                  <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                     ${isTracking ? '<span class="text-emerald-600 animate-pulse">Tracking</span>' : hours + ' hrs'}
+                  </span>
+               </div>
+               <span class="text-[9px] font-mono text-slate-300">#${t.id.slice(-4)}</span>
+            </div>
+          </div>`;
+        }).join('');
+
+        const colEl = document.createElement('div');
+        colEl.className = `flex flex-col h-full bg-slate-50 rounded-xl w-72 flex-shrink-0 border-t-4 ${col.color} board-column`;
+        colEl.innerHTML = `
+          <div class="p-4 flex flex-col gap-2">
+            <div class="flex justify-between items-center text-slate-400">
+              <h3 class="font-black text-[10px] uppercase tracking-widest">${col.title}</h3>
+              <button onclick="openAddTask('${col.id}')" class="text-indigo-600"><i class="fas fa-plus-circle text-base"></i></button>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-1 mt-1 overflow-hidden"><div class="bg-indigo-600 h-1 transition-all duration-500" style="width: ${progress}%"></div></div>
+          </div>
+          <div class="px-2 pb-2 space-y-2 overflow-y-auto flex-1">${tasksHtml || '<div class="h-20 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-[9px] text-slate-300 font-bold uppercase tracking-widest">Empty</div>'}</div>`;
+        container.appendChild(colEl);
+      });
+      localStorage.setItem('agileflow-final-v5', JSON.stringify(state));
+      updateBurndown(); // Refresh chart on every render
+    }
+
+    // Burndown Chart Logic
+    function updateBurndown() {
+      const ctx = document.getElementById('burndownChart').getContext('2d');
+      const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      
+      let totalPoints = 0;
+      state.columns.forEach(col => col.tasks.forEach(t => totalPoints += parseInt(t.points || 0)));
+      
+      const ideal = labels.map((_, i) => Math.max(0, totalPoints - (totalPoints / (labels.length - 1)) * i));
+      
+      // Actual remaining points (Mocked based on current board state for this version)
+      let completedPoints = 0;
+      state.columns.find(c => c.id === 'col-done').tasks.forEach(t => completedPoints += parseInt(t.points || 0));
+      const remaining = labels.map((_, i) => i === 0 ? totalPoints : (i < 3 ? totalPoints : totalPoints - completedPoints));
+
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Actual',
+            data: remaining,
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+            fill: true,
+            tension: 0.1
+          }, {
+            label: 'Ideal',
+            data: ideal,
+            borderColor: '#94a3b8',
+            borderDash: [5, 5],
+            fill: false
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false }, title: { display: true, text: 'SPRINT BURNDOWN', font: { size: 10, weight: '900' }, color: '#94a3b8' } },
+          scales: { y: { beginAtZero: true, grid: { display: false }, ticks: { font: { size: 8 } } }, x: { grid: { display: false }, ticks: { font: { size: 8 } } } }
+        }
+      });
+    }
+
+    // Core Logic Functions
+    function generateReport() {
+      let totalHours = 0; let tasks = "";
+      state.columns.forEach(col => col.tasks.forEach(t => { 
+        totalHours += t.timeLogged; 
+        if(t.completed) tasks += `- [DONE] ${t.title} (${(t.timeLogged/3600).toFixed(2)} hrs) @ ${t.completedAt}\n`;
+      }));
+      document.getElementById('reportContent').innerText = `AGILEFLOW LAB AUDIT\nUSER: Kaustubh Chaturvedi (USN: 2025EC0070)\nNIE MYSORE - E&C DEPT\n\nSPRINT GOAL: ${state.sprintGoal}\nTOTAL HOURS: ${(totalHours/3600).toFixed(2)}\n\nLOGS:\n${tasks}`;
+      toggleModal('reportModal');
+    }
+
+    function toggleComplete(taskId, colId) {
+      const task = state.columns.find(c => c.id === colId).tasks.find(t => t.id === taskId);
+      task.completed = !task.completed;
+      task.completedAt = task.completed ? new Date().toLocaleString() : null;
+      renderBoard();
+    }
+
+    function toggleTimer(taskId, colId) {
+      const task = state.columns.find(c => c.id === colId).tasks.find(t => t.id === taskId);
+      if (task.timerStart) { task.timeLogged = (task.timeLogged || 0) + Math.floor((Date.now() - task.timerStart) / 1000); task.timerStart = null; } 
+      else { task.timerStart = Date.now(); }
+      renderBoard();
+    }
+
+    // Rest of Modal, Save, Delete logic preserved...
+    function toggleModal(id) { document.getElementById(id).classList.toggle('active'); }
+    function openAddTask(colId) { currentTask = null; currentTargetCol = colId; document.getElementById('modalHeader').innerText = 'New Story'; ['deleteBtn', 'resetTimerBtn'].forEach(id => document.getElementById(id).classList.add('hidden')); ['taskTitle', 'taskDesc'].forEach(id => document.getElementById(id).value = ''); toggleModal('taskModal'); }
+    function openEditTask(taskId, colId) { currentTargetCol = colId; currentTask = state.columns.find(c => c.id === colId).tasks.find(t => t.id === taskId); document.getElementById('modalHeader').innerText = 'Update Story'; ['deleteBtn', 'resetTimerBtn'].forEach(id => document.getElementById(id).classList.remove('hidden')); document.getElementById('taskTitle').value = currentTask.title; document.getElementById('taskDesc').value = currentTask.description || ''; document.getElementById('taskType').value = currentTask.type; document.getElementById('taskPoints').value = currentTask.points; toggleModal('taskModal'); }
+    function saveTask() { const title = document.getElementById('taskTitle').value; if (!title) return alert("Title required"); const taskData = { id: currentTask ? currentTask.id : 't-' + Date.now(), title, description: document.getElementById('taskDesc').value, type: document.getElementById('taskType').value, points: document.getElementById('taskPoints').value, completed: currentTask ? currentTask.completed : false, completedAt: currentTask ? currentTask.completedAt : null, timeLogged: currentTask ? currentTask.timeLogged : 0, timerStart: currentTask ? currentTask.timerStart : null }; const col = state.columns.find(c => c.id === currentTargetCol); if (currentTask) { col.tasks[col.tasks.findIndex(t => t.id === currentTask.id)] = taskData; } else { col.tasks.push(taskData); } renderBoard(); toggleModal('taskModal'); }
+    function deleteTask() { if (confirm('Delete?')) { const col = state.columns.find(c => c.id === currentTargetCol); col.tasks = col.tasks.filter(t => t.id !== currentTask.id); renderBoard(); toggleModal('taskModal'); } }
+    function resetTaskTimer() { if (currentTask && confirm('Reset hours?')) { currentTask.timeLogged = 0; currentTask.timerStart = null; saveTask(); } }
+    function updateGoal(v) { state.sprintGoal = v; localStorage.setItem('agileflow-final-v5', JSON.stringify(state)); }
+    function handleDrop(e, targetColId) { const { taskId, sourceColId } = JSON.parse(e.dataTransfer.getData('text')); if (sourceColId === targetColId) return; const sourceCol = state.columns.find(c => c.id === sourceColId); const task = sourceCol.tasks.splice(sourceCol.tasks.findIndex(t => t.id === taskId), 1)[0]; state.columns.find(c => c.id === targetColId).tasks.push(task); renderBoard(); }
+    function aiEnhance() { document.getElementById('taskDesc').value = `**User Story:** As a user, I want ${document.getElementById('taskTitle').value} so that efficiency is maximized.\n\n**Acceptance Criteria:**\n- Logic validated.\n- UI responsive.`; }
+    async function exportPDF() { const canvas = await html2canvas(document.getElementById('boardContent'), { scale: 2, backgroundColor: '#f1f5f9' }); const pdf = new jspdf.jsPDF('l', 'mm', 'a4'); pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 297, (canvas.height * 297) / canvas.width); pdf.save(`AgileFlow_Report.pdf`); }
+    function exportData() { const blob = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `AgileFlow_Backup.json`; a.click(); }
+    function copyReport() { navigator.clipboard.writeText(document.getElementById('reportContent').innerText); alert("Copied!"); }
+
+    renderBoard();
+  </script>
+</body>
+</html>

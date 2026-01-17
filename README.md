@@ -13,7 +13,7 @@ Key Features
 
     Privacy-Native: Operates entirely within the local client environment using browser-based storage—zero data ever leaves your machine.
 
-🛠 Strategic Tech Stack
+ Strategic Tech Stack
 
     Architecture: Angular (Zoneless)
 
